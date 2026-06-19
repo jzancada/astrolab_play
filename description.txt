@@ -10,3 +10,10 @@ This way i would be glad to understand how the astrolab really project this 3d p
 
 además, quiero colocar un "reloj de sol" en este plano tangente en 3d. Con el gnomo apuntando al norte de la tierra cdomo si estuviese en el suelo en la Tierra, con su inclinación dependiendo de la latitud. Con este reloj de sol también puedo ver la "sombra" del sol para leer la hora en el "reloj de sol"
 Si es pequeño se puede hacer "zoom" para verlo mejor en detalle
+
+también quiero que aparezcan los ángulos del sol con respecto a la posición local: con respecto al norte y ángulo de ascensión. A modo de azimuth-elevation en el plano tangente.
+
+tambien podemos leer de un fichero un sencillo script que pueda:
+poner una fecha y hora determinada
+mover el rete por ejemplo a la salida / entrada de sol
+simular el paso de tiempo para ese dia y ver cómo se modican las posiciones. Esta velocidad irá con un factor para que sea más rápido ir de una fecha a otra, por ejemplo, a un velocidad fija. 
