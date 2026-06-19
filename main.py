@@ -162,6 +162,25 @@ while running:
             elif ev.key == pygame.K_PERIOD:     # . → step forward 1 hour
                 lst_deg = (lst_deg + 15.0) % 360
 
+        elif ev.type == pygame.MOUSEWHEEL:
+            mx, my = pygame.mouse.get_pos()
+            factor = 1.12 ** ev.y
+            if mx < SPLIT:
+                astro.zoom    = max(0.25, min(6.0, astro.zoom    * factor))
+            elif mx < SPLIT2:
+                view3.zoom    = max(0.25, min(6.0, view3.zoom    * factor))
+            else:
+                dial_top.zoom = max(0.25, min(6.0, dial_top.zoom * factor))
+
+        elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 2:
+            mx, my = ev.pos
+            if mx < SPLIT:
+                astro.zoom    = 1.0
+            elif mx < SPLIT2:
+                view3.zoom    = 1.0
+            else:
+                dial_top.zoom = 1.0
+
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             mx, my = ev.pos
             if LAT_RECT.inflate(0, 24).collidepoint(mx, my):

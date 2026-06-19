@@ -11,20 +11,21 @@ An interactive astrolabe simulator built with Python and pygame. The app explain
 ### Panel 1 — 2D Astrolabe (left)
 - **Tympan** (fixed plate): altitude circles (almucantars) and azimuth arcs computed for the selected latitude
 - **Rete** (rotating star map): ecliptic ring with the Sun's position, 16 bright stars
+- **Ecliptic scale**: month boundaries (major ticks) and 5° minor ticks on the ecliptic ring, with month abbreviations (Jan–Dec) — rotates with the rete
 - **Rule**: line from centre to the Sun, reads solar time on the hour ring
-- **Hour ring** (limb): 24-hour scale around the outer rim, labelled in solar time (6 = sunrise, 12 = noon, 18 = sunset)
+- **Hour ring** (limb): 24-hour scale around the outer rim, labelled in solar time (6 = sunrise, 12 = noon, 18 = sunset); orientation: North at bottom, South at top, East left, West right
 
 ### Panel 2 — 3D Celestial Sphere (centre)
 - Wireframe celestial sphere with equatorial grid
 - **Celestial equator** (blue), **ecliptic** (red), **horizon circle** (gold)
-- **Tropical band**: semi-transparent zone between the Tropic of Cancer (+23.4°) and the Tropic of Capricorn (−23.4°), subdivided by 72 RA meridian lines (every 5°, with thicker lines every 30° marking the 12 months)
-- **Tangent plane**: semi-transparent horizontal plane at the observer's position
-- **Sundial**: gnomon pointing to the North Celestial Pole, shadow on the horizontal plane, semi-transparent triangle connecting gnomon tip → shadow tip
+- **Tropical band**: semi-transparent zone between the Tropic of Cancer (+23.4°) and the Tropic of Capricorn (−23.4°), with 72 RA meridian lines (every 5°, thicker every 30° for the 12 months)
+- **Tangent plane**: semi-transparent horizontal plane at the observer's position, updates with latitude and time
+- **Sundial**: gnomon pointing to the North Celestial Pole, shadow on the horizontal plane, semi-transparent triangle connecting gnomon base → gnomon tip → shadow tip
 - **Stereographic projection ray**: line from the South Celestial Pole through the Sun to the astrolabe plate
 
 ### Panel 3 — Sundial Top View (right)
 - Orthographic top-down view of the horizontal sundial (North up, East right)
-- **Daily shadow trace**: full arc from sunrise to sunset for the current date
+- **Daily shadow trace**: full arc from sunrise to sunset for the current date, sampled every 5 minutes
 - Hour marks (6 h – 18 h) labelled on the trace
 - **Current shadow** shown as a dark line from the gnomon base to the shadow tip
 - The trace shape changes with the date slider (hyperbola in winter, straight line near the equinoxes)
@@ -67,10 +68,12 @@ python main.py
 | **Date slider** | Move through the year (day 1–365) |
 | **Solar time slider** | Set time of day (0 h – 24 h solar time) |
 | **Drag on astrolabe** | Rotate the rete (advance / retard LST) |
-| `, ` / `.` keys | Step LST back / forward 1 hour |
+| `,` / `.` keys | Step LST back / forward 1 hour |
 | `←` / `→` keys | Step date back / forward 1 day |
 | `↑` / `↓` keys | Increase / decrease latitude by 1° |
 | **Drag on 3D panel** | Rotate the 3D camera (azimuth / elevation) |
+| **Scroll wheel** | Zoom in / out on the panel under the cursor |
+| **Middle-click** | Reset zoom to 1× for that panel |
 | `ESC` | Quit |
 
 ---

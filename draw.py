@@ -32,6 +32,7 @@ class Astrolabe2D:
     def __init__(self, cx, cy, radius):
         self.cx, self.cy, self.R = cx, cy, radius
         self.scale = radius / CAPRICORN_R
+        self.zoom  = 1.0
         self._font_sm = None
         self._font_hr = None   # hour-ring labels
 
@@ -43,7 +44,7 @@ class Astrolabe2D:
 
     def ts(self, px, py):
         # flip y so north horizon appears at bottom, south at top
-        return to_screen(px, -py, self.cx, self.cy, self.scale)
+        return to_screen(px, -py, self.cx, self.cy, self.scale * self.zoom)
 
     # ── background ────────────────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ class Astrolabe2D:
             (+OBL, BROWN,   2),
         ]:
             d    = math.radians(dec_deg)
-            r_px = int(abs(math.cos(d) / (1.0 + math.sin(d))) * self.scale)
+            r_px = int(abs(math.cos(d) / (1.0 + math.sin(d))) * self.scale * self.zoom)
             pygame.draw.circle(surf, color, (self.cx, self.cy), r_px, w)
 
     # ── hour ring (limb) ──────────────────────────────────────────────────────
@@ -151,6 +152,89 @@ class Astrolabe2D:
 
     # ── rete (ecliptic ring + stars, rotates with LST) ───────────────────────
 
+    # ── ecliptic scale helpers ────────────────────────────────────────────────
+
+    def _ecl_screen(self, lon_deg, lst_deg):
+        """Screen (sx, sy) for ecliptic longitude lon_deg."""
+        ra, dec = ecl_to_equ(lon_deg)
+        ha = (lst_deg - ra) % 360.0
+        return self.ts(*stereo(ha, dec))
+
+    def _ecl_circle_centre(self, lst_deg):
+        """Screen-space centre of the ecliptic circle (circumcenter of 3 pts)."""
+        p0 = self._ecl_screen(0,   lst_deg)
+        p1 = self._ecl_screen(120, lst_deg)
+        p2 = self._ecl_screen(240, lst_deg)
+        ax, ay = p0;  bx, by = p1;  cx, cy = p2
+        D = 2 * (ax*(by - cy) + bx*(cy - ay) + cx*(ay - by))
+        if abs(D) < 1e-3:
+            return None
+        a2 = ax*ax + ay*ay;  b2 = bx*bx + by*by;  c2 = cx*cx + cy*cy
+        return ((a2*(by-cy) + b2*(cy-ay) + c2*(ay-by)) / D,
+                (a2*(cx-bx) + b2*(ax-cx) + c2*(bx-ax)) / D)
+
+    def draw_ecl_scale(self, surf, lst_deg):
+        """Month ticks and labels on the ecliptic ring (rotates with the rete)."""
+        self._lazy()
+
+        MONTHS = [("Jan", 1),  ("Feb", 32), ("Mar", 60), ("Apr", 91),
+                  ("May",121), ("Jun",152), ("Jul",182), ("Aug",213),
+                  ("Sep",244), ("Oct",274), ("Nov",305), ("Dec",335)]
+
+        centre = self._ecl_circle_centre(lst_deg)
+        if centre is None:
+            return
+        ecl_cx, ecl_cy = centre
+
+        def radial(sx, sy):
+            dx, dy = sx - ecl_cx, sy - ecl_cy
+            d = math.hypot(dx, dy)
+            return (dx / d, dy / d) if d > 1e-3 else (0.0, 0.0)
+
+        def in_disk(sx, sy, margin=2):
+            return (sx - self.cx)**2 + (sy - self.cy)**2 <= (self.R - margin)**2
+
+        # minor ticks every 5° of ecliptic longitude (skip month boundaries)
+        for lon in range(0, 360, 5):
+            if lon % 30 == 0:
+                continue          # drawn below as major
+            sx, sy = self._ecl_screen(lon, lst_deg)
+            if not in_disk(sx, sy):
+                continue
+            nx, ny = radial(sx, sy)
+            pygame.draw.line(surf, ECLIPTIC_C,
+                             (int(sx - nx*4), int(sy - ny*4)),
+                             (int(sx + nx*4), int(sy + ny*4)), 1)
+
+        # month boundaries (major ticks) + month name at midpoint
+        for name, day in MONTHS:
+            lon_start = sun_lon(day)
+            lon_mid   = sun_lon(day + 14)
+
+            # major boundary tick
+            sx, sy = self._ecl_screen(lon_start, lst_deg)
+            if in_disk(sx, sy):
+                nx, ny = radial(sx, sy)
+                pygame.draw.line(surf, ECLIPTIC_C,
+                                 (int(sx - nx*7), int(sy - ny*7)),
+                                 (int(sx + nx*7), int(sy + ny*7)), 2)
+
+            # month label — prefer outward, fall back to inward
+            sx_m, sy_m = self._ecl_screen(lon_mid, lst_deg)
+            if not in_disk(sx_m, sy_m):
+                continue
+            nx, ny = radial(sx_m, sy_m)
+            for sign in (1, -1):
+                lx = int(sx_m + sign * nx * 12)
+                ly = int(sy_m + sign * ny * 12)
+                if in_disk(lx, ly, 6):
+                    txt = self._font_sm.render(name, True, ECLIPTIC_C)
+                    tw, th = txt.get_size()
+                    surf.blit(txt, (lx - tw//2, ly - th//2))
+                    break
+
+    # ── rete (ecliptic ring + scale + stars, rotates with LST) ───────────────
+
     def draw_rete(self, surf, lst_deg):
         # ecliptic ring
         ecl_pts = []
@@ -166,6 +250,9 @@ class Astrolabe2D:
                 pygame.draw.lines(surf, ECLIPTIC_C, True, ecl_pts, 2)
             except Exception:
                 pass
+
+        # month/day scale on the ecliptic ring
+        self.draw_ecl_scale(surf, lst_deg)
 
         # stars
         self._lazy()
@@ -229,8 +316,9 @@ class View3D:
 
     def __init__(self, cx, cy, radius):
         self.cx, self.cy, self.R = cx, cy, radius
-        self.cam_azi  = 35.0     # camera azimuth (degrees)
-        self.cam_elv  = 28.0     # camera elevation (degrees)
+        self.cam_azi  = 35.0
+        self.cam_elv  = 28.0
+        self.zoom     = 1.0
         self._right   = None
         self._up      = None
         self._fwd     = None
@@ -269,8 +357,9 @@ class View3D:
         xs    = X*r[0] + Y*r[1] + Z*r[2]
         ys    = X*u[0] + Y*u[1] + Z*u[2]
         depth = X*f[0] + Y*f[1] + Z*f[2]
-        return (int(self.cx + xs * self.R * scale),
-                int(self.cy - ys * self.R * scale),
+        s = self.R * scale * self.zoom
+        return (int(self.cx + xs * s),
+                int(self.cy - ys * s),
                 depth)
 
     def _polyline(self, surf, pts3, color, w=1, closed=False, scale=0.72):
@@ -596,7 +685,8 @@ class SundialTop:
 
     def __init__(self, cx, cy, radius):
         self.cx, self.cy, self.R = cx, cy, radius
-        self.scale = radius / 0.85   # shadow units → pixels; clips long shadows
+        self.scale = radius / 0.85
+        self.zoom  = 1.0
         self._font    = None
         self._font_sm = None
 
@@ -644,7 +734,8 @@ class SundialTop:
 
     def _pt(self, e, n):
         """Local (East, North) → screen pixel. North = up."""
-        return int(self.cx + e * self.scale), int(self.cy - n * self.scale)
+        s = self.scale * self.zoom
+        return int(self.cx + e * s), int(self.cy - n * s)
 
     def _in_disk(self, sx, sy):
         return (sx - self.cx)**2 + (sy - self.cy)**2 <= self.R * self.R
