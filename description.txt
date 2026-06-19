@@ -1,0 +1,12 @@
+display an astrolab to play interactively.
+the user predefine a position on earth : latitude
+with this latitude a fixed plated can be displayed as an astrolabe
+then with a rete we can play to position . for example, to see the sun on eclipt and position the sun when it rise on horizon or dawn
+i want to develop this project in python with an input for latitude, and with the mouse move the rete and a ruler aligned to sun to see the hours
+i want to display the date of the year or to move the date, accordonly
+
+i want to use another 3d view: the sun on eclipti and a plane tangent to the point of the observer. so depending on time of the day the sun moves and projection on astolabe accordonly.
+This way i would be glad to understand how the astrolab really project this 3d picture
+
+además, quiero colocar un "reloj de sol" en este plano tangente en 3d. Con el gnomo apuntando al norte de la tierra cdomo si estuviese en el suelo en la Tierra, con su inclinación dependiendo de la latitud. Con este reloj de sol también puedo ver la "sombra" del sol para leer la hora en el "reloj de sol"
+Si es pequeño se puede hacer "zoom" para verlo mejor en detalle
