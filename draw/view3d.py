@@ -293,48 +293,24 @@ class View3D:
             pygame.draw.line(surf, (60, 40, 10), a2, sh2, 2)   # shadow on the wall
             pygame.draw.circle(surf, (45, 28, 5), sh2, 4)       # shadow tip
 
+            # incoming sun ray grazing the tip (parallel rays → collinear with the
+            # shadow line). Path Sun → T → shadow shows what casts the shadow.
+            sun_dir = lc(se, sn, su)                 # unit direction toward the Sun
+            ray = tuple(T[i] + 0.5 * sun_dir[i] for i in range(3))
+            r2  = self._proj(*ray)[:2]
+            pygame.draw.line(surf, (255, 210, 60), r2, t2, 2)
+            dx, dy = t2[0] - r2[0], t2[1] - r2[1]    # arrowhead at the tip end
+            d = math.hypot(dx, dy)
+            if d > 1:
+                ux, uy = dx / d, dy / d
+                for sgn in (1, -1):
+                    bx = t2[0] - 9 * ux - sgn * 5 * uy
+                    by = t2[1] - 9 * uy + sgn * 5 * ux
+                    pygame.draw.line(surf, (255, 210, 60), t2, (int(bx), int(by)), 2)
+
         # polar gnomon rod A → T (drawn on top)
         pygame.draw.line(surf, (190, 165, 100), a2, t2, 3)
         pygame.draw.circle(surf, (190, 165, 100), a2, 4)
-
-    def _draw_sun_angles(self, surf, lat_deg, day, lst_deg):
-        """
-        Draw azimuth and elevation of the Sun as arrows in the tangent plane,
-        and as text labels.
-        """
-        self._lazy()
-        lon = sun_lon(day)
-        ra_sun, dec_sun = ecl_to_equ(lon)
-        ha_sun  = (lst_deg - ra_sun) % 360.0
-        alt_sun, az_sun = equ_to_hor(ha_sun, dec_sun, lat_deg)
-
-        if alt_sun < -1:
-            return
-
-        lst_r = math.radians(lst_deg)
-        lat_r = math.radians(lat_deg)
-        E = (-math.sin(lst_r),  math.cos(lst_r), 0.0)
-        N = (-math.sin(lat_r)*math.cos(lst_r),
-             -math.sin(lat_r)*math.sin(lst_r),
-              math.cos(lat_r))
-        U = ( math.cos(lat_r)*math.cos(lst_r),
-              math.cos(lat_r)*math.sin(lst_r),
-              math.sin(lat_r))
-
-        # Azimuth arrow in the horizontal plane (N→sun direction projected onto plane)
-        az_r = math.radians(az_sun)
-        horiz_dir = (math.sin(az_r)*E[i] + math.cos(az_r)*N[i] for i in range(3))
-        horiz_dir = tuple(horiz_dir)
-        az_tip = tuple(0.55 * horiz_dir[i] for i in range(3))
-
-        origin3 = (0.0, 0.0, 0.0)
-        self._polyline(surf, [origin3, az_tip], (255, 200, 50), 2)
-
-        # Elevation angle arc label in 3D (just show text near the sun arrow)
-        ax, ay, _ = self._proj(*az_tip)
-
-        # text panel (just use screen-space text near the 3D view centre)
-        # — draw in the _draw_info_overlay instead, called from main
 
     # ── combined ──────────────────────────────────────────────────────────────
 
@@ -350,4 +326,3 @@ class View3D:
         self._draw_projection_ray(surf, day, lst_deg)
         self._draw_sun_3d(surf, day)
         self._draw_wall_sundial(surf, lat_deg, day, lst_deg)
-        self._draw_sun_angles(surf, lat_deg, day, lst_deg)
