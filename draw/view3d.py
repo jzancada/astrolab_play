@@ -233,29 +233,35 @@ class View3D:
             """local (East, North) on the ground → equatorial xyz."""
             return (e*E[0] + n*N[0], e*E[1] + n*N[1], e*E[2] + n*N[2])
 
-        s = 0.5                                   # half-size in world units
-        n_lines = 11                              # grid lines per direction
+        s = 0.6                                   # half-size in world units
+        n_lines = 9                               # grid lines per direction
         vals = [-s + 2.0*s*i/(n_lines-1) for i in range(n_lines)]
+
+        # warm green tones so the ground reads apart from the blue celestial
+        # mesh and the orange tropical band
+        GRID  = ( 70, 110,  80)
+        AXIS  = (110, 165, 120)
+        LABEL = (150, 215, 170)
 
         # semi-transparent fill so the grid reads as a surface
         ground = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
-        pygame.draw.polygon(ground, (60, 70, 90, 28),
+        pygame.draw.polygon(ground, (55, 95, 65, 34),
                             [self._proj(*lc( s,  s))[:2], self._proj(*lc( s, -s))[:2],
                              self._proj(*lc(-s, -s))[:2], self._proj(*lc(-s,  s))[:2]])
         surf.blit(ground, (0, 0))
 
         for v in vals:
-            self._polyline(surf, [lc(-s, v), lc(s, v)], (70, 75, 100), 1)
-            self._polyline(surf, [lc(v, -s), lc(v, s)], (70, 75, 100), 1)
-        # cardinal axes a touch brighter
-        self._polyline(surf, [lc(-s, 0.0), lc(s, 0.0)], (120, 120, 150), 1)  # E–W
-        self._polyline(surf, [lc(0.0, -s), lc(0.0, s)], (120, 120, 150), 1)  # N–S
+            self._polyline(surf, [lc(-s, v), lc(s, v)], GRID, 1)
+            self._polyline(surf, [lc(v, -s), lc(v, s)], GRID, 1)
+        # cardinal axes brighter and a bit thicker
+        self._polyline(surf, [lc(-s, 0.0), lc(s, 0.0)], AXIS, 2)  # E–W
+        self._polyline(surf, [lc(0.0, -s), lc(0.0, s)], AXIS, 2)  # N–S
 
         self._lazy()
         for label, p in [("N", lc(0.0,  s)), ("S", lc(0.0, -s)),
                          ("E", lc( s, 0.0)), ("W", lc(-s, 0.0))]:
             lx, ly, _ = self._proj(*p)
-            txt = self._font_sm.render(label, True, (175, 180, 215))
+            txt = self._font_sm.render(label, True, LABEL)
             surf.blit(txt, (lx - txt.get_width()//2, ly - txt.get_height()//2))
 
     def _draw_wall_sundial(self, surf, lat_deg, day, lst_deg):
