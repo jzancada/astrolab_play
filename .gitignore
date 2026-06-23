@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Claude Code — local-only settings (machine-specific paths)
+.claude/settings.local.json
+
+# VS Code — local workspace settings
+.vscode/
