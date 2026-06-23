@@ -216,6 +216,48 @@ class View3D:
         px, py, _ = self._proj(*proj)
         pygame.draw.circle(surf, (255, 255, 80), (px, py), 5)
 
+    def _draw_ground_grid(self, surf, lat_deg, lst_deg):
+        """
+        Horizontal ground plane (local N–E plane through the observer) with a
+        cardinal grid and N / S / E / W labels.  Gives spatial reference to the
+        wall sundial, which stands vertically on its E–W line.
+        """
+        lst_r = math.radians(lst_deg)
+        lat_r = math.radians(lat_deg)
+        E = (-math.sin(lst_r),  math.cos(lst_r), 0.0)
+        N = (-math.sin(lat_r)*math.cos(lst_r),
+             -math.sin(lat_r)*math.sin(lst_r),
+              math.cos(lat_r))
+
+        def lc(e, n):
+            """local (East, North) on the ground → equatorial xyz."""
+            return (e*E[0] + n*N[0], e*E[1] + n*N[1], e*E[2] + n*N[2])
+
+        s = 0.5                                   # half-size in world units
+        n_lines = 11                              # grid lines per direction
+        vals = [-s + 2.0*s*i/(n_lines-1) for i in range(n_lines)]
+
+        # semi-transparent fill so the grid reads as a surface
+        ground = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+        pygame.draw.polygon(ground, (60, 70, 90, 28),
+                            [self._proj(*lc( s,  s))[:2], self._proj(*lc( s, -s))[:2],
+                             self._proj(*lc(-s, -s))[:2], self._proj(*lc(-s,  s))[:2]])
+        surf.blit(ground, (0, 0))
+
+        for v in vals:
+            self._polyline(surf, [lc(-s, v), lc(s, v)], (70, 75, 100), 1)
+            self._polyline(surf, [lc(v, -s), lc(v, s)], (70, 75, 100), 1)
+        # cardinal axes a touch brighter
+        self._polyline(surf, [lc(-s, 0.0), lc(s, 0.0)], (120, 120, 150), 1)  # E–W
+        self._polyline(surf, [lc(0.0, -s), lc(0.0, s)], (120, 120, 150), 1)  # N–S
+
+        self._lazy()
+        for label, p in [("N", lc(0.0,  s)), ("S", lc(0.0, -s)),
+                         ("E", lc( s, 0.0)), ("W", lc(-s, 0.0))]:
+            lx, ly, _ = self._proj(*p)
+            txt = self._font_sm.render(label, True, (175, 180, 215))
+            surf.blit(txt, (lx - txt.get_width()//2, ly - txt.get_height()//2))
+
     def _draw_wall_sundial(self, surf, lat_deg, day, lst_deg):
         """
         Vertical south-facing wall sundial placed in the scene — the 3-D
@@ -263,14 +305,6 @@ class View3D:
         pygame.draw.polygon(wall_surf, (225, 205, 158, 60), cpts)
         pygame.draw.polygon(wall_surf, (120,  90,  40, 150), cpts, 1)
         surf.blit(wall_surf, (0, 0))
-
-        # E / W labels on the wall edges
-        self._lazy()
-        for label, pt in [("E", lc( ws * 0.92, 0.0, 0.0)),
-                           ("W", lc(-ws * 0.92, 0.0, 0.0))]:
-            lx, ly, _ = self._proj(*pt)
-            txt = self._font_sm.render(label, True, (140, 120, 60))
-            surf.blit(txt, (lx + 3, ly - 7))
 
         a2 = self._proj(*A)[:2]
         t2 = self._proj(*T)[:2]
@@ -325,4 +359,5 @@ class View3D:
         self._draw_horizon(surf, lat_deg, lst_deg)
         self._draw_projection_ray(surf, day, lst_deg)
         self._draw_sun_3d(surf, day)
+        self._draw_ground_grid(surf, lat_deg, lst_deg)
         self._draw_wall_sundial(surf, lat_deg, day, lst_deg)
