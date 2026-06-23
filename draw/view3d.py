@@ -167,28 +167,6 @@ class View3D:
             pygame.draw.polygon(band_surf, (230, 140, 40, 38), pts)
         surf.blit(band_surf, (0, 0))
 
-    def _draw_tangent_plane(self, surf, lat_deg, lst_deg):
-        """Semi-transparent horizontal tangent plane at the observer's position."""
-        lat_r, lst_r = math.radians(lat_deg), math.radians(lst_deg)
-        E = (-math.sin(lst_r),  math.cos(lst_r), 0.0)
-        N = (-math.sin(lat_r) * math.cos(lst_r),
-             -math.sin(lat_r) * math.sin(lst_r),
-              math.cos(lat_r))
-
-        s = 0.58  # half-size in world units
-        corners = [
-            tuple( s*E[i] + s*N[i] for i in range(3)),   # NE
-            tuple( s*E[i] - s*N[i] for i in range(3)),   # SE
-            tuple(-s*E[i] - s*N[i] for i in range(3)),   # SW
-            tuple(-s*E[i] + s*N[i] for i in range(3)),   # NW
-        ]
-        pts = [self._proj(*c)[:2] for c in corners]
-
-        plane_surf = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
-        pygame.draw.polygon(plane_surf, (210, 185, 80, 35), pts)   # fill
-        pygame.draw.polygon(plane_surf, (210, 185, 80, 110), pts, 1)  # border
-        surf.blit(plane_surf, (0, 0))
-
     def _draw_equator(self, surf):
         self._polyline(surf, self._lat_circle(0, 90), BLUE_EQ, 2, True)
 
@@ -238,22 +216,25 @@ class View3D:
         px, py, _ = self._proj(*proj)
         pygame.draw.circle(surf, (255, 255, 80), (px, py), 5)
 
-    def _draw_sundial(self, surf, lat_deg, day, lst_deg):
+    def _draw_wall_sundial(self, surf, lat_deg, day, lst_deg):
         """
-        Horizontal sundial in the observer's tangent plane.
-        Gnomon points toward the NCP (= Earth's rotation axis).
-        Shows shadow on the horizontal plane.
+        Vertical south-facing wall sundial placed in the scene — the 3-D
+        counterpart of the 2-D 'South wall sundial' panel.
+
+        The wall lies in the local E–U plane (N = 0), facing south.  The polar
+        gnomon runs from its foot A on the wall to the tip T in front of it,
+        parallel to Earth's axis.  The shadow of T on the wall is computed with
+        the same formula as draw.sundial.SundialWall, so the shadow shown here
+        and in the side panel are the same shadow (this view is its frontal
+        projection seen from the south).
         """
         lon     = sun_lon(day)
         ra_sun, dec_sun = ecl_to_equ(lon)
         ha_sun  = (lst_deg - ra_sun) % 360.0
         alt_sun, az_sun = equ_to_hor(ha_sun, dec_sun, lat_deg)
 
-        if alt_sun <= 1.0:
-            return  # sun below horizon
-
-        lst_r   = math.radians(lst_deg)
-        lat_r   = math.radians(lat_deg)
+        lst_r = math.radians(lst_deg)
+        lat_r = math.radians(lat_deg)
 
         # local frame in equatorial coords (X=RA0, Y=RA90, Z=NCP)
         E = (-math.sin(lst_r),  math.cos(lst_r), 0.0)
@@ -264,58 +245,57 @@ class View3D:
               math.cos(lat_r)*math.sin(lst_r),
               math.sin(lat_r))
 
-        # sun direction in equatorial coords
-        alt_r = math.radians(alt_sun); az_r = math.radians(az_sun)
-        se = math.cos(alt_r)*math.sin(az_r)   # East component
-        sn = math.cos(alt_r)*math.cos(az_r)   # North component
-        su = math.sin(alt_r)                   # Up component
-        sun_dir = tuple(se*E[i] + sn*N[i] + su*U[i] for i in range(3))
+        def lc(e, n, u):
+            """local (East, North, Up) → equatorial xyz."""
+            return tuple(e*E[i] + n*N[i] + u*U[i] for i in range(3))
 
-        # gnomon: from origin toward NCP (Z axis in equatorial), length 0.3
         g_len = 0.3
-        g_tip = (0.0, 0.0, g_len)   # always toward (0,0,1) = NCP
+        s_lat, c_lat = math.sin(lat_r), math.cos(lat_r)
+        A = lc(0.0, 0.0,  g_len * s_lat)   # gnomon foot on the wall  (E=0, U=g·sinφ)
+        T = lc(0.0, -g_len * c_lat, 0.0)   # gnomon tip in front      (N=-g·cosφ)
 
-        # shadow tip: ray from g_tip in -sun_dir until it hits horizontal plane
-        # plane: dot(P, U) = 0 (through origin, normal = zenith)
-        denom = sum(sun_dir[i] * U[i] for i in range(3))  # = sin(alt_sun)
-        numer = sum(g_tip[i]   * U[i] for i in range(3))  # = g_len*sin(lat)
-        if abs(denom) < 1e-6:
-            return
-        t_shad = numer / denom
-        shad_tip = tuple(g_tip[i] - t_shad * sun_dir[i] for i in range(3))
+        # wall face quad in the E–U plane (semi-transparent), East = +E, Up = +U
+        ws = 0.45
+        corners = [lc( ws, 0.0,  ws), lc( ws, 0.0, -ws),
+                   lc(-ws, 0.0, -ws), lc(-ws, 0.0,  ws)]
+        cpts = [self._proj(*c)[:2] for c in corners]
+        wall_surf = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+        pygame.draw.polygon(wall_surf, (225, 205, 158, 60), cpts)
+        pygame.draw.polygon(wall_surf, (120,  90,  40, 150), cpts, 1)
+        surf.blit(wall_surf, (0, 0))
 
-        # draw horizontal plane cross (N–S and E–W arms)
-        ps = 0.45
-        for arm in [N, E]:
-            pt_a = tuple(-ps * arm[i] for i in range(3))
-            pt_b = tuple(+ps * arm[i] for i in range(3))
-            self._polyline(surf, [pt_a, pt_b], (90, 70, 30), 1)
-
-        # compass labels
+        # E / W labels on the wall edges
         self._lazy()
-        for label, pt in [("N", tuple(ps * N[i] for i in range(3))),
-                           ("E", tuple(ps * E[i] for i in range(3)))]:
+        for label, pt in [("E", lc( ws * 0.92, 0.0, 0.0)),
+                           ("W", lc(-ws * 0.92, 0.0, 0.0))]:
             lx, ly, _ = self._proj(*pt)
             txt = self._font_sm.render(label, True, (140, 120, 60))
             surf.blit(txt, (lx + 3, ly - 7))
 
-        # projected screen positions of the three triangle vertices
-        sb = self._proj(0.0, 0.0, 0.0)   # gnomon base / shadow root
-        st = self._proj(*g_tip)            # gnomon tip
-        ss = self._proj(*shad_tip)         # shadow tip
+        a2 = self._proj(*A)[:2]
+        t2 = self._proj(*T)[:2]
 
-        # semi-transparent triangle (gnomon base → gnomon tip → shadow tip)
-        tri_surf = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
-        pygame.draw.polygon(tri_surf, (255, 215, 90, 55), [sb[:2], st[:2], ss[:2]])
-        pygame.draw.polygon(tri_surf, (255, 200, 70, 130), [sb[:2], st[:2], ss[:2]], 1)
-        surf.blit(tri_surf, (0, 0))
+        # shadow of the tip on the wall — only when the sun lights the south face
+        se = math.cos(math.radians(alt_sun)) * math.sin(math.radians(az_sun))
+        sn = math.cos(math.radians(alt_sun)) * math.cos(math.radians(az_sun))
+        su = math.sin(math.radians(alt_sun))
+        if alt_sun > 0.3 and sn < -1e-6:
+            t_sh   = -g_len * c_lat / sn
+            shadow = lc(-t_sh * se, 0.0, -t_sh * su)   # on the wall (N=0)
+            sh2    = self._proj(*shadow)[:2]
 
-        # gnomon rod (on top of triangle)
-        pygame.draw.line(surf, (190, 165, 100), sb[:2], st[:2], 3)
+            # sun-triangle A → T → shadow (its frontal projection is the 2-D panel)
+            tri = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+            pygame.draw.polygon(tri, (255, 215, 90,  55), [a2, t2, sh2])
+            pygame.draw.polygon(tri, (255, 200, 70, 130), [a2, t2, sh2], 1)
+            surf.blit(tri, (0, 0))
 
-        # shadow line (on top of triangle)
-        pygame.draw.line(surf, (70, 50, 15), sb[:2], ss[:2], 2)
-        pygame.draw.circle(surf, (55, 38, 10), ss[:2], 4)
+            pygame.draw.line(surf, (60, 40, 10), a2, sh2, 2)   # shadow on the wall
+            pygame.draw.circle(surf, (45, 28, 5), sh2, 4)       # shadow tip
+
+        # polar gnomon rod A → T (drawn on top)
+        pygame.draw.line(surf, (190, 165, 100), a2, t2, 3)
+        pygame.draw.circle(surf, (190, 165, 100), a2, 4)
 
     def _draw_sun_angles(self, surf, lat_deg, day, lst_deg):
         """
@@ -363,12 +343,11 @@ class View3D:
         self._draw_tropical_band(surf)
         self._draw_sphere_grid(surf)
         self._draw_tropic_lines(surf)
-        self._draw_tangent_plane(surf, lat_deg, lst_deg)
         self._draw_astrolabe_plate(surf)
         self._draw_equator(surf)
         self._draw_ecliptic(surf)
         self._draw_horizon(surf, lat_deg, lst_deg)
         self._draw_projection_ray(surf, day, lst_deg)
         self._draw_sun_3d(surf, day)
-        self._draw_sundial(surf, lat_deg, day, lst_deg)
+        self._draw_wall_sundial(surf, lat_deg, day, lst_deg)
         self._draw_sun_angles(surf, lat_deg, day, lst_deg)
