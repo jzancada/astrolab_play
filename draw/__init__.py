@@ -7,5 +7,6 @@ Re-exports the public drawing classes so callers can keep using
 from .astrolabe2d import Astrolabe2D
 from .view3d import View3D
 from .sundial import SundialWall
+from .heliocentric import Heliocentric
 
-__all__ = ["Astrolabe2D", "View3D", "SundialWall"]
+__all__ = ["Astrolabe2D", "View3D", "SundialWall", "Heliocentric"]

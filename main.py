@@ -2,12 +2,17 @@
 Interactive Astrolabe — main entry point.
 Run with:  D:\\producto\\miniconda3\\python.exe main.py
 
+2x2 panels:
+  top-left     2D astrolabe          top-right    3D celestial sphere + wall
+  bottom-left  south wall sundial    bottom-right heliocentric (orrery)
+
 Controls:
   Drag astrolabe   — rotate the rete (advance / retard LST)
   ← → arrows       — change date by 1 day
   ↑ ↓ arrows       — change latitude by 1°
   , / .            — advance / retard LST by 1 hour
-  Drag 3D panel    — rotate 3D view (azimuth / elevation)
+  Drag 3D / orrery — rotate that view
+  Wheel            — zoom the panel under the cursor (middle-click = reset)
   ESC              — quit
 """
 import sys
@@ -15,24 +20,21 @@ import math
 import pygame
 
 from astronomy import sun_lon, ecl_to_equ, equ_to_hor
-from draw import Astrolabe2D, View3D, SundialWall
+from draw import Astrolabe2D, View3D, SundialWall, Heliocentric
 
-# ── layout ────────────────────────────────────────────────────────────────────
-WIDTH, HEIGHT = 1650, 720
-SPLIT         = 615          # 2D | 3D divider
-SPLIT2        = 1165         # 3D | sundial-top divider
+# ── layout (2x2 grid) ──────────────────────────────────────────────────────────
+WIDTH, HEIGHT = 1645, 1115
+VDIV  = 825          # vertical divider (left | right)
+HDIV  = 545          # horizontal divider (top | bottom)
 
-ASTRO_CX, ASTRO_CY, ASTRO_R = 308, 330, 272
+ASTRO_CX, ASTRO_CY, ASTRO_R = 415, 290, 250      # top-left
+VIEW3_CX, VIEW3_CY, VIEW3_R = 1230, 290, 235     # top-right
+DIAL_CX,  DIAL_CY,  DIAL_R  = 415, 790, 200      # bottom-left
+HELIO_CX, HELIO_CY, HELIO_R = 1230, 790, 235     # bottom-right
 
-VIEW3_CX = (SPLIT + SPLIT2) // 2    # 890
-VIEW3_CY = 330
-VIEW3_R  = 235
-
-DIAL_CX  = (SPLIT2 + WIDTH) // 2   # 1407
-DIAL_CY  = 330
-DIAL_R   = 210
-
-CTRL_Y   = 645               # y of control strip
+CTRL_TOP = 1015              # top of control strip
+LAT_Y    = 1042
+LON_Y    = 1076
 
 # ── colour ────────────────────────────────────────────────────────────────────
 BG   = (12, 12, 22)
@@ -64,9 +66,11 @@ font_lg = pygame.font.SysFont("Segoe UI", 16, bold=True)
 astro     = Astrolabe2D(ASTRO_CX, ASTRO_CY, ASTRO_R)
 view3     = View3D(VIEW3_CX, VIEW3_CY, VIEW3_R)
 dial_wall = SundialWall(DIAL_CX, DIAL_CY, DIAL_R)
+helio     = Heliocentric(HELIO_CX, HELIO_CY, HELIO_R)
 
 # ── state ─────────────────────────────────────────────────────────────────────
 latitude    = 41.0   # Madrid
+longitude   = 0.0    # observer longitude (places the wall on the globe)
 day_of_year = 172    # ~21 Jun (summer solstice)
 lst_deg     = 0.0    # Local Sidereal Time in degrees (0–360)
 
@@ -75,15 +79,17 @@ dragging_rete  = False
 drag_ang0      = 0.0
 drag_lst0      = 0.0
 
-# 3D drag
+# camera drags (3D view and orrery)
 dragging_3d    = False
+dragging_helio = False
 drag_xy0       = (0, 0)
 drag_cam0      = (0.0, 0.0)
 
 # sliders
-LAT_RECT = pygame.Rect(40,  CTRL_Y, 220, 12)
-DAY_RECT = pygame.Rect(310, CTRL_Y, 220, 12)
-LST_RECT = pygame.Rect(580, CTRL_Y, 220, 12)
+LAT_RECT = pygame.Rect(40,  LAT_Y, 220, 12)
+LON_RECT = pygame.Rect(40,  LON_Y, 220, 12)
+DAY_RECT = pygame.Rect(330, LAT_Y, 220, 12)
+LST_RECT = pygame.Rect(620, LAT_Y, 220, 12)
 active_slider = None
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -97,6 +103,14 @@ def in_circle(mx, my, cx, cy, r):
 def slider_v(rect, mx, lo, hi):
     t = max(0.0, min(1.0, (mx - rect.x) / rect.width))
     return lo + t * (hi - lo)
+
+def panel_obj(mx, my):
+    """Return the panel object under (mx, my), or None if in the control strip."""
+    if my >= CTRL_TOP:
+        return None
+    if mx < VDIV:
+        return astro if my < HDIV else dial_wall
+    return view3 if my < HDIV else helio
 
 def draw_slider(surf, rect, val, lo, hi, label):
     pygame.draw.rect(surf, (40, 40, 62), rect, border_radius=3)
@@ -164,27 +178,21 @@ while running:
 
         elif ev.type == pygame.MOUSEWHEEL:
             mx, my = pygame.mouse.get_pos()
-            factor = 1.12 ** ev.y
-            if mx < SPLIT:
-                astro.zoom    = max(0.25, min(6.0, astro.zoom    * factor))
-            elif mx < SPLIT2:
-                view3.zoom    = max(0.25, min(6.0, view3.zoom    * factor))
-            else:
-                dial_wall.zoom = max(0.25, min(6.0, dial_wall.zoom * factor))
+            obj = panel_obj(mx, my)
+            if obj is not None:
+                obj.zoom = max(0.25, min(8.0, obj.zoom * 1.12 ** ev.y))
 
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 2:
-            mx, my = ev.pos
-            if mx < SPLIT:
-                astro.zoom    = 1.0
-            elif mx < SPLIT2:
-                view3.zoom    = 1.0
-            else:
-                dial_wall.zoom = 1.0
+            obj = panel_obj(*ev.pos)
+            if obj is not None:
+                obj.zoom = 1.0
 
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             mx, my = ev.pos
             if LAT_RECT.inflate(0, 24).collidepoint(mx, my):
                 active_slider = "lat"
+            elif LON_RECT.inflate(0, 24).collidepoint(mx, my):
+                active_slider = "lon"
             elif DAY_RECT.inflate(0, 24).collidepoint(mx, my):
                 active_slider = "day"
             elif LST_RECT.inflate(0, 24).collidepoint(mx, my):
@@ -193,13 +201,19 @@ while running:
                 dragging_rete = True
                 drag_ang0     = ang_from(mx, my, ASTRO_CX, ASTRO_CY)
                 drag_lst0     = lst_deg
-            elif mx > SPLIT:
-                dragging_3d  = True
-                drag_xy0     = (mx, my)
-                drag_cam0    = (view3.cam_azi, view3.cam_elv)
+            else:
+                obj = panel_obj(mx, my)
+                if obj is view3:
+                    dragging_3d = True
+                    drag_xy0    = (mx, my)
+                    drag_cam0   = (view3.cam_azi, view3.cam_elv)
+                elif obj is helio:
+                    dragging_helio = True
+                    drag_xy0       = (mx, my)
+                    drag_cam0      = (helio.cam_azi, helio.cam_elv)
 
         elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 1:
-            dragging_rete = dragging_3d = False
+            dragging_rete = dragging_3d = dragging_helio = False
             active_slider = None
 
         elif ev.type == pygame.MOUSEMOTION:
@@ -207,6 +221,9 @@ while running:
             if active_slider == "lat":
                 latitude = float(round(max(-89.0,
                                            min(89.0, slider_v(LAT_RECT, mx, -89, 89)))))
+            elif active_slider == "lon":
+                longitude = float(round(max(-180.0,
+                                            min(180.0, slider_v(LON_RECT, mx, -180, 180)))))
             elif active_slider == "day":
                 day_of_year = int(max(1, min(365, slider_v(DAY_RECT, mx, 1, 365))))
             elif active_slider == "lst":
@@ -217,38 +234,39 @@ while running:
                 cur     = ang_from(mx, my, ASTRO_CX, ASTRO_CY)
                 lst_deg = (drag_lst0 + (cur - drag_ang0)) % 360
             elif dragging_3d:
-                dx           = mx - drag_xy0[0]
-                dy           = my - drag_xy0[1]
+                dx = mx - drag_xy0[0]
+                dy = my - drag_xy0[1]
                 view3.cam_azi = (drag_cam0[0] + dx * 0.5) % 360
                 view3.cam_elv = max(-89, min(89, drag_cam0[1] - dy * 0.3))
+            elif dragging_helio:
+                dx = mx - drag_xy0[0]
+                dy = my - drag_xy0[1]
+                helio.cam_azi = (drag_cam0[0] + dx * 0.5) % 360
+                helio.cam_elv = max(-89, min(89, drag_cam0[1] - dy * 0.3))
 
     # ── render ────────────────────────────────────────────────────────────────
     screen.fill(BG)
 
     # panel dividers
-    pygame.draw.line(screen, (35, 35, 55), (SPLIT,  0), (SPLIT,  HEIGHT), 1)
-    pygame.draw.line(screen, (35, 35, 55), (SPLIT2, 0), (SPLIT2, HEIGHT), 1)
+    pygame.draw.line(screen, (35, 35, 55), (VDIV, 0), (VDIV, CTRL_TOP), 1)
+    pygame.draw.line(screen, (35, 35, 55), (0, HDIV), (WIDTH, HDIV), 1)
 
-    # 2-D astrolabe (left panel)
     astro.draw_all(screen, latitude, day_of_year, lst_deg)
-
-    # 3-D view (centre panel)
     view3.draw_all(screen, latitude, day_of_year, lst_deg)
-
-    # sundial top-down view (right panel)
     dial_wall.draw_all(screen, latitude, day_of_year, lst_deg)
+    helio.draw_all(screen, latitude, day_of_year, lst_deg, longitude)
 
-    # legend (top-right)
-    draw_legend(screen, SPLIT + 14, 14)
-
-    # Sun azimuth / elevation info (right panel, below legend)
-    draw_sun_info(screen, latitude, day_of_year, lst_deg, SPLIT + 14, 135)
+    # legend + sun info (top-right panel)
+    draw_legend(screen, VDIV + 14, 14)
+    draw_sun_info(screen, latitude, day_of_year, lst_deg, VDIV + 14, 135)
 
     # control strip
-    pygame.draw.rect(screen, (14, 14, 28), (0, CTRL_Y - 22, WIDTH, HEIGHT - (CTRL_Y - 22)))
+    pygame.draw.rect(screen, (14, 14, 28), (0, CTRL_TOP, WIDTH, HEIGHT - CTRL_TOP))
 
     draw_slider(screen, LAT_RECT, latitude, -89, 89,
                 f"Latitude: {latitude:.0f}°")
+    draw_slider(screen, LON_RECT, longitude, -180, 180,
+                f"Longitude: {longitude:.0f}°")
     draw_slider(screen, DAY_RECT, day_of_year, 1, 365,
                 f"Date: {day_str(day_of_year)}")
 
@@ -258,8 +276,9 @@ while running:
     draw_slider(screen, LST_RECT, sol_t, 0, 24, lst_label)
 
     screen.blit(font.render(
-        "↑↓ latitude  ·  ←→ date  ·  drag rete = rotate  ·  , . time +/-1h  ·  drag 3D = rotate view",
-        True, HINT), (10, HEIGHT - 22))
+        "↑↓ latitude  ·  ←→ date  ·  drag rete = rotate  ·  , . time +/-1h  ·  "
+        "drag 3D / orrery = rotate  ·  wheel = zoom panel",
+        True, HINT), (10, HEIGHT - 20))
 
     pygame.display.flip()
     clock.tick(60)
