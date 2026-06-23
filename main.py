@@ -251,10 +251,20 @@ while running:
     pygame.draw.line(screen, (35, 35, 55), (VDIV, 0), (VDIV, CTRL_TOP), 1)
     pygame.draw.line(screen, (35, 35, 55), (0, HDIV), (WIDTH, HDIV), 1)
 
-    astro.draw_all(screen, latitude, day_of_year, lst_deg)
-    view3.draw_all(screen, latitude, day_of_year, lst_deg)
-    dial_wall.draw_all(screen, latitude, day_of_year, lst_deg)
-    helio.draw_all(screen, latitude, day_of_year, lst_deg, longitude)
+    # each panel is clipped to its quadrant so a zoomed view can't bleed over
+    for rect, draw in (
+        (pygame.Rect(0, 0, VDIV, HDIV),
+         lambda: astro.draw_all(screen, latitude, day_of_year, lst_deg)),
+        (pygame.Rect(VDIV, 0, WIDTH - VDIV, HDIV),
+         lambda: view3.draw_all(screen, latitude, day_of_year, lst_deg)),
+        (pygame.Rect(0, HDIV, VDIV, CTRL_TOP - HDIV),
+         lambda: dial_wall.draw_all(screen, latitude, day_of_year, lst_deg)),
+        (pygame.Rect(VDIV, HDIV, WIDTH - VDIV, CTRL_TOP - HDIV),
+         lambda: helio.draw_all(screen, latitude, day_of_year, lst_deg, longitude)),
+    ):
+        screen.set_clip(rect)
+        draw()
+    screen.set_clip(None)
 
     # legend + sun info (top-right panel)
     draw_legend(screen, VDIV + 14, 14)
