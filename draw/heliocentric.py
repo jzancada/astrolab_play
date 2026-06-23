@@ -32,6 +32,11 @@ def _add(a, b): return (a[0]+b[0], a[1]+b[1], a[2]+b[2])
 def _sub(a, b): return (a[0]-b[0], a[1]-b[1], a[2]-b[2])
 def _mul(a, s): return (a[0]*s, a[1]*s, a[2]*s)
 
+# month name → day-of-year of its 1st, for ticks around the orbit
+MONTHS = [("Jan", 1),  ("Feb", 32), ("Mar", 60), ("Apr", 91),
+          ("May", 121), ("Jun", 152), ("Jul", 182), ("Aug", 213),
+          ("Sep", 244), ("Oct", 274), ("Nov", 305), ("Dec", 335)]
+
 
 class Heliocentric:
     """
@@ -124,7 +129,7 @@ class Heliocentric:
         su = math.sin(ar)
 
         return dict(lam=lam, earth=earth, s_hat=s_hat, P=P, X_b=X_b, Y_b=Y_b,
-                    obs_dir=obs_dir, observer=observer, u=u, N=N, E=E,
+                    obs_dir=obs_dir, observer=observer, u=u, N=N, E=E, H=H,
                     alt=alt, az=az, se=se, sn=sn, su=su, phi=phi)
 
     def observer_sun_local(self, lat_deg, day, lst_deg, lon_deg=0.0):
@@ -190,6 +195,17 @@ class Heliocentric:
         pts = [self._proj(p) for p in orbit]
         pygame.draw.lines(surf, (90, 70, 60), False, pts, 1)
 
+        # month marks around the orbit (Earth's heliocentric longitude = sun_lon+180)
+        for name, d in MONTHS:
+            th    = math.radians(sun_lon(d)) + math.pi
+            dirv  = (math.cos(th), math.sin(th), 0.0)
+            pygame.draw.line(surf, (120, 100, 80),
+                             self._proj(_mul(dirv, self.R_ORBIT*0.96)),
+                             self._proj(_mul(dirv, self.R_ORBIT*1.05)), 1)
+            lab = self._proj(_mul(dirv, self.R_ORBIT*1.14))
+            txt = self._font_sm.render(name, True, (150, 140, 110))
+            surf.blit(txt, (lab[0] - txt.get_width()//2, lab[1] - txt.get_height()//2))
+
         # Sun at the centre
         sun2 = self._proj((0.0, 0.0, 0.0))
         pygame.draw.circle(surf, YELLOW, sun2, 12)
@@ -212,19 +228,27 @@ class Heliocentric:
         term = self._great_circle(sc["s_hat"])
         self._globe_curve(surf, earth, term, (60, 70, 95), 1)
 
-        # lat/lon grid — meridians carry a phase so the globe visibly spins with
-        # the hour angle; longitude offsets them (places the observer's meridian)
-        ha_phase = -math.radians((lst_deg) % 360.0)
-        lon_off  = math.radians(lon_deg)
+        # lat/lon grid.  Geographic longitude λ maps to angle m0 = radians(λ) +
+        # phase about the spin axis, with phase chosen so the observer sits at its
+        # own longitude and the grid spins with the hour angle H.
+        phase = sc["H"] - math.radians(lon_deg)
         for lc in (-60, -30, 0, 30, 60):
             col = (70, 95, 130) if lc else (90, 140, 110)
             self._globe_curve(surf, earth,
-                              self._parallel(math.radians(lc), X_b, Y_b, P, ha_phase),
+                              self._parallel(math.radians(lc), X_b, Y_b, P, phase),
                               col, 2 if lc == 0 else 1)
-        for k in range(12):
-            m0 = ha_phase + lon_off + k * math.pi/6
+        for lam_g in range(0, 360, 30):
+            m0 = math.radians(lam_g) + phase
+            greenwich = (lam_g == 0)
             self._globe_curve(surf, earth, self._meridian(m0, X_b, Y_b, P),
-                              (60, 80, 110), 1)
+                              (90, 200, 230) if greenwich else (60, 80, 110),
+                              2 if greenwich else 1)
+        # label the Greenwich meridian where it crosses the equator (front side)
+        g_dir = _add(_mul(X_b, math.cos(phase)), _mul(Y_b, math.sin(phase)))
+        if _dot(g_dir, self._fwd) < 0.0:
+            gp = self._proj(_add(earth, _mul(g_dir, self.R_EARTH)))
+            surf.blit(self._font_sm.render("0°", True, (130, 220, 240)),
+                      (gp[0] + 3, gp[1] - 12))
 
         # spin axis (poles)
         np_dir, sp_dir = P, _mul(P, -1.0)
@@ -242,57 +266,99 @@ class Heliocentric:
         surf.blit(self._font_sm.render("Earth", True, (150, 180, 210)),
                   (ec[0] + er_px + 4, ec[1] - 6))
 
-        # ── the wall sundial at the observer (visible when zoomed) ────────────
-        self._draw_wall(surf, sc)
+        # ── the church tower carrying the sundial (visible when zoomed) ───────
+        self._draw_tower(surf, sc)
 
         # title
         surf.blit(self._font.render("Heliocentric view", True, GRAY),
                   (self.cx - 60, self.cy - self.R - 4))
 
-    def _draw_wall(self, surf, sc):
+    def _draw_tower(self, surf, sc):
+        """
+        A small square church tower standing at the observer, with the sundial
+        on its south face and a Christian cross on top.  Local axes: E (east),
+        N (north), u (up).  The tower's south face lies in the observer's E–U
+        plane (N=0), so the dial geometry — and its shadow — match the other
+        panels exactly.
+        """
         observer = sc["observer"]
         u, N, E  = sc["u"], sc["N"], sc["E"]
         phi      = sc["phi"]
         se, sn, su = sc["se"], sc["sn"], sc["su"]
+        s_hat    = sc["s_hat"]
 
-        # only when this side of the globe faces us
+        # only when the observer's side of the globe faces us
         if _dot(sc["obs_dir"], self._fwd) >= 0.0:
             return
 
         g = self.G_LEN * self.R_EARTH
+        w_h  = g * 1.5          # tower half-width (square footprint)
+        h_t  = g * 4.0          # wall height
+        roof = g * 1.8          # roof height
+        cx_h = g * 1.4          # cross height
+        cx_w = g * 0.5          # cross half-arm
+
+        def L(e, n, up):
+            """local (east, north, up) → world."""
+            return _add(observer, _add(_add(_mul(E, e), _mul(N, n)), _mul(u, up)))
+
+        # footprint: south face at n=0 (through the observer), north at n=2·w_h
+        SWb, SEb = L(-w_h, 0, 0),       L( w_h, 0, 0)
+        NEb, NWb = L( w_h, 2*w_h, 0),   L(-w_h, 2*w_h, 0)
+        SWt, SEt = L(-w_h, 0, h_t),     L( w_h, 0, h_t)
+        NEt, NWt = L( w_h, 2*w_h, h_t), L(-w_h, 2*w_h, h_t)
+        apex     = L(0, w_h, h_t + roof)
+
+        # faces: (corners, outward normal) — walls then the four roof slopes
+        faces = [
+            ([SWb, SEb, SEt, SWt], _mul(N, -1.0)),   # south (dial side)
+            ([NEb, NWb, NWt, NEt],  N),              # north
+            ([SEb, NEb, NEt, SEt],  E),              # east
+            ([NWb, SWb, SWt, NWt], _mul(E, -1.0)),   # west
+            ([SWt, SEt, apex],     _add(_mul(N, -1.0), _mul(u, 0.6))),   # roof S
+            ([NEt, NWt, apex],     _add(N,             _mul(u, 0.6))),   # roof N
+            ([SEt, NEt, apex],     _add(E,             _mul(u, 0.6))),   # roof E
+            ([NWt, SWt, apex],     _add(_mul(E, -1.0), _mul(u, 0.6))),   # roof W
+        ]
+        # painter's sort: far faces first (larger depth along the view direction)
+        faces.sort(key=lambda fc: _dot(_sub(_mul(_add(fc[0][0], fc[0][2]), 0.5),
+                                            self._focus), self._fwd), reverse=True)
+        stone = (200, 190, 165)
+        for corners, normal in faces:
+            sh  = max(0.0, _dot(_norm(normal), s_hat))   # simple sun shading
+            col = tuple(int(c * (0.40 + 0.60*sh)) for c in stone)
+            poly = [self._proj(p) for p in corners]
+            pygame.draw.polygon(surf, col, poly)
+            pygame.draw.polygon(surf, (70, 60, 45), poly, 1)
+
+        # Christian cross above the apex
+        base = L(0, w_h, h_t + roof)
+        top  = L(0, w_h, h_t + roof + cx_h)
+        barL = L(-cx_w, w_h, h_t + roof + cx_h*0.62)
+        barR = L( cx_w, w_h, h_t + roof + cx_h*0.62)
+        pygame.draw.line(surf, (230, 220, 195), self._proj(base), self._proj(top), 2)
+        pygame.draw.line(surf, (230, 220, 195), self._proj(barL), self._proj(barR), 2)
+
+        # ── sundial on the south face, at mid-height ──────────────────────────
         c_phi, s_phi = math.cos(phi), math.sin(phi)
-        A = _add(observer, _mul(u, g * s_phi))     # gnomon foot on the wall (E=0,U=g·sinφ)
-        T = _add(observer, _mul(N, -g * c_phi))    # gnomon tip in front      (N=-g·cosφ)
-
-        # local horizon disc (small), to seat the wall
-        ws = g * 1.6
-        quad = [_add(_add(observer, _mul(E,  ws)), _mul(u,  ws)),
-                _add(_add(observer, _mul(E,  ws)), _mul(u, -ws)),
-                _add(_add(observer, _mul(E, -ws)), _mul(u, -ws)),
-                _add(_add(observer, _mul(E, -ws)), _mul(u,  ws))]
-        wsurf = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
-        pygame.draw.polygon(wsurf, (225, 205, 158, 70), [self._proj(q) for q in quad])
-        pygame.draw.polygon(wsurf, (120, 90, 40, 160), [self._proj(q) for q in quad], 1)
-        surf.blit(wsurf, (0, 0))
-
-        a2 = self._proj(A)
-        t2 = self._proj(T)
+        C = L(0, 0, h_t * 0.55)                       # dial centre on the south wall
+        A = _add(C, _mul(u,  g * s_phi))              # gnomon foot   (E=0, U=g·sinφ)
+        T = _add(C, _mul(N, -g * c_phi))              # gnomon tip in front (N=-g·cosφ)
+        a2, t2 = self._proj(A), self._proj(T)
 
         # shadow of the tip on the wall (sun lighting the south face: sn < 0)
         if su > 0.005 and sn < -1e-6:
             t_sh   = -g * c_phi / sn
-            shadow = _add(_add(observer, _mul(E, -t_sh * se)), _mul(u, -t_sh * su))
+            shadow = _add(C, _add(_mul(E, -t_sh * se), _mul(u, -t_sh * su)))
             sh2    = self._proj(shadow)
             tri = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
-            pygame.draw.polygon(tri, (255, 215, 90,  60),  [a2, t2, sh2])
+            pygame.draw.polygon(tri, (255, 215, 90,  60), [a2, t2, sh2])
             pygame.draw.polygon(tri, (255, 200, 70, 140), [a2, t2, sh2], 1)
             surf.blit(tri, (0, 0))
             pygame.draw.line(surf, (60, 40, 10), a2, sh2, 2)
             pygame.draw.circle(surf, (45, 28, 5), sh2, 3)
-            # incoming sun ray grazing the tip (parallel → collinear with shadow)
-            ray = _add(T, _mul(sc["s_hat"], g * 2.0))
+            ray = _add(T, _mul(s_hat, g * 2.0))       # incoming ray grazing the tip
             pygame.draw.line(surf, (255, 210, 60), self._proj(ray), t2, 2)
 
         # polar gnomon rod A → T
         pygame.draw.line(surf, (190, 165, 100), a2, t2, 2)
-        pygame.draw.circle(surf, (210, 80, 60), a2, 3)   # observer marker
