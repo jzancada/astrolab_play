@@ -15,7 +15,7 @@ import math
 import pygame
 
 from astronomy import sun_lon, ecl_to_equ, equ_to_hor
-from draw import Astrolabe2D, View3D, SundialTop
+from draw import Astrolabe2D, View3D, SundialWall
 
 # ── layout ────────────────────────────────────────────────────────────────────
 WIDTH, HEIGHT = 1650, 720
@@ -63,7 +63,7 @@ font_lg = pygame.font.SysFont("Segoe UI", 16, bold=True)
 
 astro     = Astrolabe2D(ASTRO_CX, ASTRO_CY, ASTRO_R)
 view3     = View3D(VIEW3_CX, VIEW3_CY, VIEW3_R)
-dial_top  = SundialTop(DIAL_CX, DIAL_CY, DIAL_R)
+dial_wall = SundialWall(DIAL_CX, DIAL_CY, DIAL_R)
 
 # ── state ─────────────────────────────────────────────────────────────────────
 latitude    = 41.0   # Madrid
@@ -170,7 +170,7 @@ while running:
             elif mx < SPLIT2:
                 view3.zoom    = max(0.25, min(6.0, view3.zoom    * factor))
             else:
-                dial_top.zoom = max(0.25, min(6.0, dial_top.zoom * factor))
+                dial_wall.zoom = max(0.25, min(6.0, dial_wall.zoom * factor))
 
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 2:
             mx, my = ev.pos
@@ -179,7 +179,7 @@ while running:
             elif mx < SPLIT2:
                 view3.zoom    = 1.0
             else:
-                dial_top.zoom = 1.0
+                dial_wall.zoom = 1.0
 
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             mx, my = ev.pos
@@ -236,7 +236,7 @@ while running:
     view3.draw_all(screen, latitude, day_of_year, lst_deg)
 
     # sundial top-down view (right panel)
-    dial_top.draw_all(screen, latitude, day_of_year, lst_deg)
+    dial_wall.draw_all(screen, latitude, day_of_year, lst_deg)
 
     # legend (top-right)
     draw_legend(screen, SPLIT + 14, 14)
